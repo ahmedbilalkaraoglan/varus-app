@@ -1,90 +1,105 @@
 import streamlit as st
-import numpy as np
+from streamlit_drawable_canvas import st_canvas
 from PIL import Image, ImageDraw
-from ultralytics import YOLO
 import math
 
 st.set_page_config(layout="centered")
-st.title("HKA AI - Final Stable Version")
+st.title("Hip-Knee-Ankle (HKA) Mekanik Aks Analizi")
 
-# 🧠 LAZY LOAD MODEL (CRASH ENGELİ)
-@st.cache_resource
-def load_model():
-    return YOLO("yolov8n-pose.pt")
+uploaded_file = st.file_uploader("Görüntü yükle", type=["jpg", "jpeg", "png"])
 
-model = load_model()
+# 📐 dikeye göre açı
+def angle_with_vertical(v):
+    vertical = (0, -1)
+    dot = v[0]*vertical[0] + v[1]*vertical[1]
+    mag = math.hypot(*v)
 
-uploaded_file = st.file_uploader("Röntgen yükle", type=["jpg", "jpeg", "png"])
-
-def angle(v1, v2):
-    dot = np.dot(v1, v2)
-    mag = np.linalg.norm(v1) * np.linalg.norm(v2)
     if mag == 0:
         return 0
-    return np.degrees(np.arccos(np.clip(dot / mag, -1, 1)))
+
+    cos_theta = dot / mag
+    cos_theta = max(min(cos_theta, 1), -1)
+
+    return abs(math.degrees(math.acos(cos_theta)))
 
 if uploaded_file:
 
     image = Image.open(uploaded_file).convert("RGB")
-    img = np.array(image)
 
-    st.image(image, caption="Input Image")
+    # 📏 resize
+    MAX_WIDTH = 700
+    w, h = image.size
 
-    results = model(img)
+    if w > MAX_WIDTH:
+        ratio = MAX_WIDTH / w
+        w, h = int(w * ratio), int(h * ratio)
+        image = image.resize((w, h))
 
-    for r in results:
+    st.image(image, caption="Orijinal Görüntü")
 
-        if r.keypoints is None:
-            st.error("No keypoints detected")
-            st.stop()
+    st.info("👉 3 nokta koy: Hip → Knee → Ankle")
 
-        kpts = r.keypoints.xy[0].cpu().numpy()
+    canvas = st_canvas(
+        background_image=image,
+        height=h,
+        width=w,
+        drawing_mode="point",
+        stroke_width=2,
+        key="canvas",
+    )
 
-        # COCO keypoints
-        hip = kpts[11].astype(int)
-        knee = kpts[13].astype(int)
-        ankle = kpts[15].astype(int)
+    if canvas.json_data:
 
-        # 🖼 PIL DRAW (CV2 YOK)
-        draw_img = image.copy()
-        draw = ImageDraw.Draw(draw_img)
+        objects = canvas.json_data["objects"]
 
-        r_point = 5
+        if len(objects) >= 3:
 
-        # noktalar
-        draw.ellipse(
-            [hip[0]-r_point, hip[1]-r_point, hip[0]+r_point, hip[1]+r_point],
-            fill=(255, 0, 0)
-        )
-        draw.ellipse(
-            [knee[0]-r_point, knee[1]-r_point, knee[0]+r_point, knee[1]+r_point],
-            fill=(0, 255, 0)
-        )
-        draw.ellipse(
-            [ankle[0]-r_point, ankle[1]-r_point, ankle[0]+r_point, ankle[1]+r_point],
-            fill=(0, 0, 255)
-        )
+            # 📌 noktalar
+            pts = [(o["left"], o["top"]) for o in objects[:3]]
 
-        # çizgiler
-        draw.line([tuple(hip), tuple(knee)], fill=(255, 0, 0), width=2)
-        draw.line([tuple(knee), tuple(ankle)], fill=(0, 0, 255), width=2)
+            # 🔥 anatomik sıralama
+            pts = sorted(pts, key=lambda p: p[1])
 
-        # vektörler
-        femur = hip - knee
-        tibia = ankle - knee
+            hip, knee, ankle = pts
 
-        deviation = angle(femur, tibia)
+            # 🖼 çizim
+            img_draw = image.copy()
+            draw = ImageDraw.Draw(img_draw)
 
-        st.image(draw_img, caption="AI Output")
+            draw.line([hip, knee], fill="red", width=3)
+            draw.line([knee, ankle], fill="red", width=3)
 
-        st.success(f"HKA Açısı: {deviation:.2f}°")
+            for p in pts:
+                r = 4
+                draw.ellipse(
+                    (p[0]-r, p[1]-r, p[0]+r, p[1]+r),
+                    fill="blue"
+                )
 
-        # klinik sınıflama
-        if deviation <= 2:
-            st.success("Normal")
-        elif deviation <= 5:
-            st.warning("Borderline")
-        elif deviation <= 7:
-            st.warning("Klinik anlamlı")
-        else:
-            st.error("Belirgin deformite")
+            # 📐 vektörler
+            femur = (knee[0]-hip[0], knee[1]-hip[1])
+            tibia = (ankle[0]-knee[0], ankle[1]-knee[1])
+
+            # 🔥 doğru referans: dikey
+            femur_angle = angle_with_vertical(femur)
+            tibia_angle = angle_with_vertical(tibia)
+
+            # 🔥 HKA sapma
+            hka_deviation = abs(femur_angle - tibia_angle)
+
+            st.success(f"HKA Deviasyonu: {hka_deviation:.2f}°")
+
+            # 🧠 KLİNİK SINIFLAMA
+            if hka_deviation <= 3:
+                st.success("🟢 Normal aks")
+
+            elif hka_deviation <= 5:
+                st.warning("🟡 Hafif deviasyon")
+
+            elif hka_deviation <= 10:
+                st.warning("🟠 Orta deviasyon")
+
+            else:
+                st.error("🔴 İleri varus / valgus deviasyonu")
+
+            st.image(img_draw, caption="Analiz Görüntüsü")
