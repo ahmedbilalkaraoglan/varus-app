@@ -5,9 +5,14 @@ from ultralytics import YOLO
 import math
 
 st.set_page_config(layout="centered")
-st.title("HKA AI (Final CV2-Free Version)")
+st.title("HKA AI - Final Stable Version")
 
-model = YOLO("yolov8n-pose.pt")
+# 🧠 LAZY LOAD MODEL (CRASH ENGELİ)
+@st.cache_resource
+def load_model():
+    return YOLO("yolov8n-pose.pt")
+
+model = load_model()
 
 uploaded_file = st.file_uploader("Röntgen yükle", type=["jpg", "jpeg", "png"])
 
@@ -23,7 +28,7 @@ if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
     img = np.array(image)
 
-    st.image(image, caption="Input")
+    st.image(image, caption="Input Image")
 
     results = model(img)
 
@@ -40,7 +45,7 @@ if uploaded_file:
         knee = kpts[13].astype(int)
         ankle = kpts[15].astype(int)
 
-        # PIL DRAW (CV2 YOK)
+        # 🖼 PIL DRAW (CV2 YOK)
         draw_img = image.copy()
         draw = ImageDraw.Draw(draw_img)
 
@@ -64,6 +69,7 @@ if uploaded_file:
         draw.line([tuple(hip), tuple(knee)], fill=(255, 0, 0), width=2)
         draw.line([tuple(knee), tuple(ankle)], fill=(0, 0, 255), width=2)
 
+        # vektörler
         femur = hip - knee
         tibia = ankle - knee
 
