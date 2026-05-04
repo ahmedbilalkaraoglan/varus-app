@@ -53,7 +53,7 @@ if uploaded_file:
 
         deg = angle(femur, tibia)
 
-        st.image(draw_img, caption="Analiz")
+       st.image(image, use_container_width=True)
 
         st.success(f"HKA Açısı: {deg:.2f}°")
 
