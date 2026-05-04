@@ -1,93 +1,67 @@
 import streamlit as st
-from streamlit_drawable_canvas import st_canvas
-from PIL import Image, ImageDraw
+import numpy as np
+import cv2
+from PIL import Image
 import math
 
 st.set_page_config(layout="centered")
-st.title("Hip-Knee-Ankle (HKA) Mekanik Aks Analizi")
+st.title("HKA AI Analiz (Stabil Versiyon)")
 
-uploaded_file = st.file_uploader("Görüntü yükle", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Röntgen yükle", type=["jpg", "jpeg", "png"])
 
-def angle_with_vertical(v):
-    vertical = (0, -1)
-    dot = v[0]*vertical[0] + v[1]*vertical[1]
-    mag = math.hypot(*v)
-
+def angle(v1, v2):
+    dot = np.dot(v1, v2)
+    mag = np.linalg.norm(v1) * np.linalg.norm(v2)
     if mag == 0:
         return 0
-
-    cos_theta = dot / mag
-    cos_theta = max(min(cos_theta, 1), -1)
-
-    return abs(math.degrees(math.acos(cos_theta)))
+    cos = dot / mag
+    cos = np.clip(cos, -1, 1)
+    return np.degrees(np.arccos(cos))
 
 if uploaded_file:
 
     image = Image.open(uploaded_file).convert("RGB")
+    img = np.array(image)
 
-    MAX_WIDTH = 700
-    w, h = image.size
+    st.image(img, caption="Yüklenen görüntü")
 
-    if w > MAX_WIDTH:
-        ratio = MAX_WIDTH / w
-        w, h = int(w * ratio), int(h * ratio)
-        image = image.resize((w, h))
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
-    st.image(image)
+    # 🔥 basit edge detection
+    edges = cv2.Canny(gray, 50, 150)
 
-    st.info("👉 3 nokta koy: Hip → Knee → Ankle")
+    h, w = edges.shape
 
-    canvas = st_canvas(
-        background_image=image,
-        height=h,
-        width=w,
-        drawing_mode="point",
-        stroke_width=2,
-        key="canvas",
-    )
+    # 🧠 basit heuristic landmark tahmini
+    hip = (int(w*0.5), int(h*0.2))
+    knee = (int(w*0.5), int(h*0.5))
+    ankle = (int(w*0.5), int(h*0.8))
 
-    if canvas.json_data:
+    # çizim
+    out = img.copy()
 
-        objects = canvas.json_data["objects"]
+    cv2.circle(out, hip, 6, (255,0,0), -1)
+    cv2.circle(out, knee, 6, (0,255,0), -1)
+    cv2.circle(out, ankle, 6, (0,0,255), -1)
 
-        if len(objects) >= 3:
+    cv2.line(out, hip, knee, (255,0,0), 2)
+    cv2.line(out, knee, ankle, (0,0,255), 2)
 
-            pts = [(o["left"], o["top"]) for o in objects[:3]]
-            pts = sorted(pts, key=lambda p: p[1])
+    femur = np.array(hip) - np.array(knee)
+    tibia = np.array(ankle) - np.array(knee)
 
-            hip, knee, ankle = pts
+    deviation = angle(femur, tibia)
 
-            img_draw = image.copy()
-            draw = ImageDraw.Draw(img_draw)
+    st.image(out, caption="AI Analiz")
 
-            draw.line([hip, knee], fill="red", width=3)
-            draw.line([knee, ankle], fill="red", width=3)
+    st.success(f"HKA Açısı: {deviation:.2f}°")
 
-            for p in pts:
-                r = 4
-                draw.ellipse((p[0]-r, p[1]-r, p[0]+r, p[1]+r), fill="blue")
-
-            femur = (knee[0]-hip[0], knee[1]-hip[1])
-            tibia = (ankle[0]-knee[0], ankle[1]-knee[1])
-
-            femur_angle = angle_with_vertical(femur)
-            tibia_angle = angle_with_vertical(tibia)
-
-            deviation = abs(femur_angle - tibia_angle)
-
-            st.success(f"HKA Deviasyonu: {deviation:.2f}°")
-
-            # 🧠 KLİNİK SINIFLAMA (YENİ)
-            if deviation <= 2:
-                st.success("🟢 Normal (0–2°)")
-
-            elif deviation <= 5:
-                st.warning("🟡 Borderline / Hafif sapma (2–5°)")
-
-            elif deviation <= 7:
-                st.warning("🟠 Klinik anlamlı deformite (5–7°)")
-
-            else:
-                st.error("🔴 Belirgin deformite (>7°)")
-
-            st.image(img_draw, caption="Analiz Görüntüsü")
+    # 📊 klinik sınıflama
+    if deviation <= 2:
+        st.success("Normal")
+    elif deviation <= 5:
+        st.warning("Borderline")
+    elif deviation <= 7:
+        st.warning("Klinik anlamlı")
+    else:
+        st.error("Belirgin deformite")
