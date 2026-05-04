@@ -8,7 +8,7 @@ st.title("HKA Mekanik Aks Analizi (Stable Version)")
 
 uploaded_file = st.file_uploader("Görüntü yükle", type=["jpg", "jpeg", "png"])
 
-# açı hesabı
+# 📐 açı hesabı
 def angle(v1, v2):
     dot = np.dot(v1, v2)
     mag = np.linalg.norm(v1) * np.linalg.norm(v2)
@@ -19,39 +19,34 @@ def angle(v1, v2):
 if uploaded_file:
 
     image = Image.open(uploaded_file).convert("RGB")
+
+    # resize (çok büyük görüntüleri kontrol eder)
+    MAX_WIDTH = 700
     w, h = image.size
+
+    if w > MAX_WIDTH:
+        ratio = MAX_WIDTH / w
+        w, h = int(w * ratio), int(h * ratio)
+        image = image.resize((w, h))
 
     st.image(image, caption="Orijinal Görüntü")
 
-    st.info("👉 Görselin üstüne sırayla 3 noktayı tıklayın: HIP → KNEE → ANKLE")
+    st.info("👉 HIP → KNEE → ANKLE koordinatlarını gir")
 
-    # session state
-    if "points" not in st.session_state:
-        st.session_state.points = []
-
-    # click capture (Streamlit hack - image click simulation)
-    click = st.experimental_data_editor(
-        {"x": [], "y": []},
-        num_rows="dynamic",
-        key="click_table"
-    )
-
-    st.warning("⚠️ Bu tabloda 3 satır gir: x-y koordinatlarını manuel yaz")
-
-    # alternatif daha stabil input
+    # 📌 INPUTLAR
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        hx = st.number_input("Hip X", 0, w)
-        hy = st.number_input("Hip Y", 0, h)
+        hx = st.number_input("Hip X", 0, w, 0)
+        hy = st.number_input("Hip Y", 0, h, 0)
 
     with col2:
-        kx = st.number_input("Knee X", 0, w)
-        ky = st.number_input("Knee Y", 0, h)
+        kx = st.number_input("Knee X", 0, w, 0)
+        ky = st.number_input("Knee Y", 0, h, 0)
 
     with col3:
-        ax = st.number_input("Ankle X", 0, w)
-        ay = st.number_input("Ankle Y", 0, h)
+        ax = st.number_input("Ankle X", 0, w, 0)
+        ay = st.number_input("Ankle Y", 0, h, 0)
 
     if st.button("Hesapla"):
 
@@ -63,27 +58,34 @@ if uploaded_file:
         draw_img = image.copy()
         draw = ImageDraw.Draw(draw_img)
 
+        # çizgiler
         draw.line([tuple(hip), tuple(knee)], fill="red", width=3)
         draw.line([tuple(knee), tuple(ankle)], fill="red", width=3)
 
+        # noktalar
         for p in [hip, knee, ankle]:
             r = 5
-            draw.ellipse((p[0]-r, p[1]-r, p[0]+r, p[1]+r), fill="blue")
+            draw.ellipse(
+                (p[0]-r, p[1]-r, p[0]+r, p[1]+r),
+                fill="blue"
+            )
 
+        # vektörler
         femur = hip - knee
         tibia = ankle - knee
 
         deg = angle(femur, tibia)
 
-        st.image(draw_img, caption="Analiz")
+        st.image(draw_img, caption="Analiz Sonucu")
 
         st.success(f"HKA Açısı: {deg:.2f}°")
 
+        # klinik yorum
         if deg <= 2:
-            st.info("Normal")
+            st.info("🟢 Normal aks")
         elif deg <= 5:
-            st.warning("Hafif deviasyon")
+            st.warning("🟡 Hafif deviasyon")
         elif deg <= 10:
-            st.warning("Orta deviasyon")
+            st.warning("🟠 Orta deviasyon")
         else:
-            st.error("İleri varus/valgus")
+            st.error("🔴 İleri varus / valgus")
